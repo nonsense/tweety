@@ -1,0 +1,59 @@
+image:
+  repository: nonsens3/lotus
+  pullPolicy: IfNotPresent
+  tag: latest
+
+# daemonConfig allows for defining the config.toml for the lotus daemon
+# you MUST listen on 1234 for the api and 1347 for the libp2p address
+daemonConfig: |
+  [API]
+    ListenAddress = "/ip4/0.0.0.0/tcp/1234/http"
+  [Libp2p]
+    ListenAddresses = ["/ip4/0.0.0.0/tcp/1347"]
+
+# pass additional arguments to the lotus daemon, these values will be passed as container
+# arguments to the daemon container.
+# eg:
+# daemonArgs:
+# - --profile=bootstrap
+daemonArgs:
+  - --import-snapshot
+  - https://fil-chain-snapshots-fallback.s3.amazonaws.com/mainnet/minimal_finality_stateroots_latest.car
+
+# set additional environment variables on the lotus daemon
+# eg:
+# daemonEnvs:
+# - name: GOLOG_LOG_FMT
+#   value: json
+daemonEnvs: {}
+
+ports:
+  api: 1234
+  libp2p: 1347
+
+persistence:
+  journal:
+    size: "10Gi"
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: "gp2"
+  datastore:
+    size: "800Gi"
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: "gp2"
+  parameters:
+    size: "10Gi"
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: "gp2"
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+additionalLabels: {}

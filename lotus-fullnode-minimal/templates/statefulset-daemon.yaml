@@ -1,0 +1,209 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name}}-lotus-daemon-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.toml: |
+{{ .Values.daemonConfig | indent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-lotus
+  labels:
+    app: lotus-fullnode-app
+{{- with .Values.additionalLabels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  # Hard set to a single replica, scaling should be done through additional releases
+  replicas: 1
+  serviceName: {{ .Release.Name }}-lotus-service
+  selector:
+    matchLabels:
+      app: lotus-fullnode-app
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: lotus-fullnode-app
+        chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+        release: {{ .Release.Name }}
+{{- with .Values.additionalLabels }}
+{{ toYaml . | indent 8 }}
+{{- end }}
+    spec:
+      securityContext:
+        fsGroup: 532
+        runAsNonRoot: true
+        runAsUser: 532
+        runAsGroup: 532
+      volumes:
+      - name: config-volume
+        configMap:
+          name: {{ .Release.Name }}-lotus-daemon-config
+          items:
+          - key: config.toml
+            path: config.toml
+      - name: jwt-secrets-volume
+        emptyDir:
+          medium: Memory
+      - name: jwt-token-volume
+        emptyDir:
+          medium: Memory
+      - name: libp2p-secrets-volume
+        emptyDir:
+          medium: Memory
+      - name: keystore-volume
+        emptyDir:
+          medium: Memory
+      initContainers:
+      - name: temp-jwt
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        command: ["bash","-c"]
+        args:
+          - |
+            pushd /tmp/
+
+            lotus-shed jwt new node
+            lotus-shed base16 -decode < jwt-node.jwts > "/jwt-secrets-volume/MF2XI2BNNJ3XILLQOJUXMYLUMU"
+            mv jwt-node.token /jwt-token-volume/token
+        volumeMounts:
+          - name: jwt-secrets-volume
+            mountPath: /jwt-secrets-volume
+          - name: jwt-token-volume
+            mountPath: /jwt-token-volume
+      - name: keystore-transfer-jwt
+        image: busybox
+        command: ["sh","-c"]
+        args:
+          - |
+            for key in $(ls /secrets); do
+              cp "/secrets/$key" /keystore/
+              chmod 0600 "/keystore/$key"
+            done
+        volumeMounts:
+          - name: jwt-secrets-volume
+            mountPath: /secrets
+            readOnly: true
+          - name: keystore-volume
+            mountPath: /keystore
+      - name: temp-libp2p
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        command: ["bash","-c"]
+        args:
+          - |
+            pushd /tmp/
+
+            lotus-shed keyinfo new --output "<type>.keyinfo" libp2p-host
+            lotus-shed base16 -decode < libp2p-host.keyinfo > /libp2p-secrets-volume/NRUWE4BSOAWWQ33TOQ
+
+            popd
+        volumeMounts:
+          - name: libp2p-secrets-volume
+            mountPath: /libp2p-secrets-volume
+      - name: keystore-transfer-libp2p
+        image: busybox
+        command: ["sh","-c"]
+        args:
+          - |
+            for key in $(ls /secrets); do
+              cp "/secrets/$key" /keystore/
+              chmod 0600 "/keystore/$key"
+            done
+        volumeMounts:
+          - name: libp2p-secrets-volume
+            mountPath: /secrets
+            readOnly: true
+          - name: keystore-volume
+            mountPath: /keystore
+      containers:
+      - name: daemon
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/usr/local/bin/lotus","daemon"]
+        {{- with .Values.daemonArgs }}
+        args:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.daemonEnvs}}
+        env:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+          - name: config-volume
+            mountPath: /var/lib/lotus/config.toml
+            subPath: config.toml
+            readOnly: true
+          - name: jwt-token-volume
+            mountPath: /var/lib/lotus/token
+            subPath: token
+            readOnly: true
+          - name: keystore-volume
+            mountPath: /var/lib/lotus/keystore
+            readOnly: true
+          - name: datastore-volume
+            mountPath: /var/lib/lotus/datastore
+          - name: journal-volume
+            mountPath: /var/lib/lotus/journal
+          - name: parameters-volume
+            mountPath: /var/tmp/filecoin-proof-parameters
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        ports:
+        - containerPort: 1234
+          name: api
+        - containerPort: 1347
+          name: p2p
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: datastore-volume
+      spec:
+        accessModes:
+        {{- range .Values.persistence.datastore.accessModes }}
+        - {{ . | quote }}
+        {{- end }}
+        storageClassName: {{ .Values.persistence.datastore.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.datastore.size | quote }}
+        {{- with .Values.persistence.datastore.dataSource }}
+        dataSource:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+    - metadata:
+        name: journal-volume
+      spec:
+        accessModes:
+        {{- range .Values.persistence.journal.accessModes }}
+        - {{ . | quote }}
+        {{- end }}
+        storageClassName: {{ .Values.persistence.journal.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.journal.size | quote }}
+    - metadata:
+        name: parameters-volume
+      spec:
+        accessModes:
+        {{- range .Values.persistence.parameters.accessModes }}
+        - {{ . | quote }}
+        {{- end }}
+        storageClassName: {{ .Values.persistence.parameters.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.parameters.size | quote }}

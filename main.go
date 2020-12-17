@@ -7,7 +7,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc"
 	"github.com/gorilla/rpc/json"
+
+	logging "github.com/ipfs/go-log/v2"
 )
+
+func init() {
+	logging.SetLogLevel("*", "debug")
+}
 
 func main() {
 	rpcServer := rpc.NewServer()
@@ -24,25 +30,8 @@ func main() {
 
 	router := mux.NewRouter()
 	router.Handle("/", rpcServer)
+	router.HandleFunc("/dashboard", dashboardHandler)
 
+	fmt.Println("Listening...")
 	http.ListenAndServe(":1337", router)
-}
-
-type TweetyService struct{}
-
-type HelloResponse struct {
-	Result string
-}
-
-type HelloRequest struct {
-	Subject, Content string
-}
-
-func (t *TweetyService) Hello(r *http.Request, req *HelloRequest, result *HelloResponse) error {
-	*result = HelloResponse{Result: fmt.Sprintf("Hello subject and content: %s ; %s", req.Subject, req.Content)}
-	return nil
-}
-
-func NewTweetyService() *TweetyService {
-	return &TweetyService{}
 }

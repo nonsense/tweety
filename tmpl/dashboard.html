@@ -1,0 +1,17 @@
+<html>
+  <head>
+  </head>
+  <body>
+
+  <h1>Deployed canaries</h1>
+
+  <p><pre>{{.HelmOutput}}</pre></p>
+
+  <h1>Claims</h1>
+
+  {{range .Claims}}
+  <p><pre>{{.ReleaseName}} - {{.Owner}}</pre></p>
+  {{end}}
+
+  </body>
+</html>

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: lotus-fullnode-minimal
+description: Provision a minimal fullnode lotus node for test purposes
+type: application
+version: 0.0.1
+appVersion: 0.0.1
